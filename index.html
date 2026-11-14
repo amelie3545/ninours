@@ -189,7 +189,7 @@ window.addEventListener('pointermove',e=>{if(pointers.has(e.pointerId))pointers.
 const lift=e=>pointers.delete(e.pointerId);
 window.addEventListener('pointerup',lift);window.addEventListener('pointercancel',lift);
 window.addEventListener('blur',()=>{pointers.clear();for(const k in keys)keys[k]=false;setPause(true);});
-window.addEventListener('keydown',e=>{if(pseudoOpen||(e.target&&e.target.tagName==='INPUT'))return;if(e.code==='KeyP'||e.code==='Escape'){if(!e.repeat)setPause(state==='play');return;}if(state==='pause'){if(!e.repeat&&(e.code==='Space'||e.code==='Enter'))setPause(false);return;}if(e.code.startsWith('Arrow')||e.code==='Space')e.preventDefault();if(!e.repeat&&(e.code==='Space'||e.code==='Enter'||e.code.startsWith('Arrow')))tapStart();keys[e.code]=true;});
+window.addEventListener('keydown',e=>{if(pseudoOpen||(e.target&&e.target.tagName==='INPUT'))return;if(e.code==='KeyP'||e.code==='Escape'||(e.code==='Space'&&(state==='play'||state==='pause'))){e.preventDefault();if(!e.repeat)setPause(state==='play');return;}if(state==='pause'){if(!e.repeat&&(e.code==='Space'||e.code==='Enter'))setPause(false);return;}if(e.code.startsWith('Arrow')||e.code==='Space')e.preventDefault();if(!e.repeat&&(e.code==='Space'||e.code==='Enter'||e.code.startsWith('Arrow')))tapStart();keys[e.code]=true;});
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 
@@ -1111,7 +1111,7 @@ function drawPauseScreen(){
   if(bw)drawBoard(W-safeR-bw-14,Math.max(safeT+56,H*0.2),bw);
   ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.font=`900 ${fs}px ${FONT}`;ctx.shadowColor='rgba(160,140,255,0.9)';ctx.shadowBlur=22;ctx.fillStyle='#ece6ff';ctx.fillText('Pause',cx,cy);ctx.shadowBlur=0;
-  ctx.font=`900 ${Math.max(16,fs*0.42)}px ${FONT}`;ctx.fillStyle='#8ff4ff';ctx.shadowColor='#4fe6ff';ctx.shadowBlur=12;ctx.fillText('Touche pour reprendre',cx,cy+fs*1.1);ctx.shadowBlur=0;
+  ctx.font=`900 ${Math.max(16,fs*0.42)}px ${FONT}`;ctx.fillStyle='#8ff4ff';ctx.shadowColor='#4fe6ff';ctx.shadowBlur=12;ctx.fillText(matchMedia('(pointer:fine)').matches?'Espace ou clic pour reprendre':'Touche pour reprendre',cx,cy+fs*1.1);ctx.shadowBlur=0;
 }
 function drawRotate(){
   ctx.fillStyle='rgba(3,6,16,0.88)';ctx.fillRect(0,0,W,H);
