@@ -21,11 +21,24 @@ canvas{display:block;position:fixed;inset:0}
 #pseudoBox h2{margin:0;color:#ffe2b0;font-size:20px;text-align:center}
 #pseudoBox input{font:inherit;font-size:18px;padding:10px 12px;border-radius:10px;border:1px solid rgba(160,230,255,0.5);background:rgba(255,255,255,0.08);color:#fff;outline:none;user-select:text;-webkit-user-select:text}
 #pseudoBox button{font:inherit;font-weight:800;font-size:17px;padding:10px;border:0;border-radius:10px;background:#5fd8ff;color:#08142a}
+#installBox{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(3,4,16,0.8);z-index:6;font-family:'Trebuchet MS','Avenir Next',system-ui,sans-serif;color:#e6eeff}
+#installBox[hidden]{display:none}
+#installBox .card{background:linear-gradient(#1b1640,#0d0b24);border:1px solid rgba(160,140,255,0.5);border-radius:18px;padding:16px 20px;box-shadow:0 0 40px rgba(120,100,255,0.35);width:min(440px,86vw);max-height:86vh;overflow:auto}
+#installBox h2{margin:0 0 8px;color:#ffe2b0;font-size:20px;text-align:center}
+#installBox ol{margin:6px 0 8px;padding-left:22px;line-height:1.5;font-size:15px}
+#installBox p{margin:6px 0;font-size:14px;line-height:1.4}
+#installBox .sub{color:#9fdcff;font-weight:800;margin-top:10px}
+#installBox .note{color:rgba(200,215,255,0.75);font-size:13px}
+#installBox .ico{display:inline-block;vertical-align:-3px}
+#installBox .row{display:flex;gap:10px;margin-top:12px}
+#installBox button{flex:1;font:inherit;font-weight:800;font-size:16px;padding:10px;border:0;border-radius:10px;background:rgba(255,255,255,0.12);color:#fff}
+#installBox button.main{background:#5fd8ff;color:#08142a}
 #safe{position:absolute;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 </style>
 </head>
 <body>
 <div id="safe"></div>
+<div id="installBox" hidden><div class="card"><h2>📲 Installer Ninours</h2><div id="installBody"></div><div class="row"><button id="installNow" class="main" hidden>Installer</button><button id="installClose">Fermer</button></div></div></div>
 <div id="pseudoBox" hidden><form id="pseudoForm" autocomplete="off"><h2>Ton pseudo</h2><input id="pseudoIn" maxlength="14" placeholder="Ex : Amélie" enterkeyhint="go"><button type="submit">C'est parti !</button></form></div>
 <canvas id="c"></canvas>
 <script>
@@ -46,7 +59,9 @@ const G={cyan:sprite(80,235,255),mag:sprite(255,80,200),orange:sprite(255,160,60
 G.violet=sprite(150,90,255);G.indigo=sprite(90,80,255);
 const APAL=[{s:G.blue,c:'#5a8cff'},{s:G.violet,c:'#a77bff'},{s:G.cyan,c:'#7fe8ff'},{s:G.mag,c:'#d06bff'},{s:G.indigo,c:'#7d74ff'}];
 const PAL=[{s:G.cyan,c:'#6ff0ff'},{s:G.mag,c:'#ff6fd0'},{s:G.orange,c:'#ffae55'},{s:G.green,c:'#8dffb8'},{s:G.gold,c:'#ffe08a'}];
-let A=0,abyssSaid=false; // 0 = lagoon, 1 = abyss (fades in around 1000 m)
+let A=0,abyssSaid=false,lowPhase=0;
+const lowK=()=>clamp((35-o2)/35,0,1);
+const lowBeat=()=>0.5+0.5*Math.cos(lowPhase); // 0 = lagoon, 1 = abyss (fades in around 1000 m)
 function palAt(seed){return hash(seed+77)<A?APAL[Math.floor(hash(seed+5)*APAL.length)]:PAL[Math.floor(hash(seed+13)*PAL.length)];}
 function hexRgb(h){const n=parseInt(h.slice(1),16);return[n>>16,(n>>8)&255,n&255];}
 function mix(a,b,k,al){const x=hexRgb(a),y=hexRgb(b);const c=x.map((v,i)=>Math.round(v+(y[i]-v)*k));return al==null?`rgb(${c})`:`rgba(${c},${al})`;}
@@ -170,9 +185,42 @@ document.getElementById('pseudoForm').addEventListener('submit',e=>{e.preventDef
   pseudo=v;try{localStorage.setItem('ninours_pseudo',v);}catch(e){}
   try{pin.blur();}catch(e){}pbox.hidden=true;pseudoOpen=false;const f=afterPseudo;afterPseudo=null;if(f)f();});
 lbFetch();
+// ===== Installation en web app =====
+const APP_URL='https://ninours.netlify.app';
+let installOpen=false,installBtn=null,deferredInstall=null;
+const isStandalone=()=>{try{return matchMedia('(display-mode: fullscreen)').matches||matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;});
+window.addEventListener('appinstalled',()=>{deferredInstall=null;closeInstall();});
+const ibox=document.getElementById('installBox'),ibody=document.getElementById('installBody'),inow=document.getElementById('installNow');
+const SHARE_SVG='<svg class="ico" width="18" height="20" viewBox="0 0 18 20" fill="none" stroke="#9fdcff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 13V2M5 6l4-4 4 4"/><path d="M6 9H3v9h12V9h-3"/></svg>';
+function installHTML(){
+  const ua=navigator.userAgent||'',ios=/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1),android=/Android/.test(ua);
+  const onSite=/(^|\.)ninours\.netlify\.app$/.test(location.hostname);
+  const intro=onSite?'':'<p>Ouvre d’abord le jeu sur <b>ninours.netlify.app</b> dans ton navigateur, puis :</p>';
+  const iosSteps='<ol><li>Ouvre le jeu dans <b>Safari</b>.</li><li>Touche le bouton <b>Partager</b> '+SHARE_SVG+' (en bas de l’écran, ou en haut sur iPad).</li><li>Choisis <b>« Sur l’écran d’accueil »</b>.</li><li>Coche <b>« Ouvrir comme app web »</b>, puis touche <b>Ajouter</b>.</li></ol>';
+  const andSteps='<ol><li>Ouvre le jeu dans <b>Chrome</b>.</li><li>Touche le menu <b>⋮</b> en haut à droite.</li><li>Choisis <b>« Ajouter à l’écran d’accueil »</b> ou <b>« Installer l’application »</b>.</li></ol>';
+  let h=intro;
+  if(ios)h+=iosSteps;
+  else if(android)h+=(deferredInstall&&onSite?'<p>Touche simplement le bouton <b>Installer</b> ci-dessous. Sinon :</p>':'')+andSteps;
+  else h+='<p class="sub">Sur iPhone</p>'+iosSteps+'<p class="sub">Sur Android</p>'+andSteps;
+  h+='<p class="note">Ninours apparaîtra sur ton écran d’accueil avec son icône et s’ouvrira en plein écran, comme une vraie appli. Ton pseudo et ton record sont gardés.</p>';
+  return h;
+}
+function openInstall(){installOpen=true;pointers.clear();ibody.innerHTML=installHTML();inow.hidden=!(deferredInstall&&/ninours\.netlify\.app$/.test(location.hostname));ibox.hidden=false;}
+function closeInstall(){ibox.hidden=true;installOpen=false;}
+document.getElementById('installClose').addEventListener('click',closeInstall);
+ibox.addEventListener('click',e=>{if(e.target===ibox)closeInstall();});
+inow.addEventListener('click',()=>{if(!deferredInstall)return;deferredInstall.prompt();deferredInstall.userChoice.finally(()=>{deferredInstall=null;closeInstall();});});
+function drawInstallBtn(){
+  installBtn=null;if(isStandalone())return;
+  const label='📲 Installer l’appli';ctx.font=`800 14px ${FONT}`;const tw=ctx.measureText(label).width,bh=34,bw=tw+26,x=safeL+14,y=H-safeB-14-bh;
+  ctx.save();ctx.fillStyle='rgba(20,30,70,0.75)';roundRect(x,y,bw,bh,bh/2);ctx.fill();ctx.strokeStyle='rgba(150,220,255,0.6)';ctx.lineWidth=1.3;ctx.stroke();
+  ctx.fillStyle='#d8f3ff';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,x+13,y+bh/2+1);ctx.restore();
+  installBtn={x,y,w:bw,h:bh};
+}
 function tapStart(){
   if(portrait)return;
-  if(pseudoOpen)return;
+  if(pseudoOpen||installOpen)return;
   if(state==='menu'){if(LEADERBOARD_URL&&!pseudo){askPseudo(()=>{reset();state='play';});return;}reset();state='play';}
   else if(state==='over'&&overT>1){reset();state='play';}
 }
@@ -182,6 +230,7 @@ function onPauseBtn(x,y){const p=pauseBtn,m=10;return x>p.x-m&&x<p.x+p.s+m&&y>p.
 cv.addEventListener('pointerdown',e=>{e.preventDefault();
   if(state==='pause'){setPause(false);return;}
   if(state==='play'&&onPauseBtn(e.clientX,e.clientY)){setPause(true);return;}
+  if((state==='menu'||state==='over')&&installBtn){const B=installBtn;if(e.clientX>B.x-8&&e.clientX<B.x+B.w+8&&e.clientY>B.y-8&&e.clientY<B.y+B.h+8){openInstall();return;}}
   if(state==='menu'&&pseudoLink){const L=pseudoLink;if(e.clientX>L.x-10&&e.clientX<L.x+L.w+10&&e.clientY>L.y-12&&e.clientY<L.y+L.h+12){askPseudo(null);return;}}
   pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});tapStart();});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)setPause(true);});
@@ -189,7 +238,7 @@ window.addEventListener('pointermove',e=>{if(pointers.has(e.pointerId))pointers.
 const lift=e=>pointers.delete(e.pointerId);
 window.addEventListener('pointerup',lift);window.addEventListener('pointercancel',lift);
 window.addEventListener('blur',()=>{pointers.clear();for(const k in keys)keys[k]=false;setPause(true);});
-window.addEventListener('keydown',e=>{if(pseudoOpen||(e.target&&e.target.tagName==='INPUT'))return;if(e.code==='KeyP'||e.code==='Escape'||(e.code==='Space'&&(state==='play'||state==='pause'))){e.preventDefault();if(!e.repeat)setPause(state==='play');return;}if(state==='pause'){if(!e.repeat&&(e.code==='Space'||e.code==='Enter'))setPause(false);return;}if(e.code.startsWith('Arrow')||e.code==='Space')e.preventDefault();if(!e.repeat&&(e.code==='Space'||e.code==='Enter'||e.code.startsWith('Arrow')))tapStart();keys[e.code]=true;});
+window.addEventListener('keydown',e=>{if(installOpen&&e.code==='Escape'){closeInstall();return;}if(installOpen||pseudoOpen||(e.target&&e.target.tagName==='INPUT'))return;if(e.code==='KeyP'||e.code==='Escape'||(e.code==='Space'&&(state==='play'||state==='pause'))){e.preventDefault();if(!e.repeat)setPause(state==='play');return;}if(state==='pause'){if(!e.repeat&&(e.code==='Space'||e.code==='Enter'))setPause(false);return;}if(e.code.startsWith('Arrow')||e.code==='Space')e.preventDefault();if(!e.repeat&&(e.code==='Space'||e.code==='Enter'||e.code.startsWith('Arrow')))tapStart();keys[e.code]=true;});
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 
@@ -319,6 +368,7 @@ function moveEnemies(dt,k){
 }
 function update(dt){
   if(state==='pause')return;
+  if(state==='play'&&o2<35)lowPhase+=dt*Math.PI*2*(1+0.35*lowK());else lowPhase=0;
   t+=dt;sayCool-=dt;computeInput();
   if(portrait&&state==='play')return;
   if(state==='menu'){
@@ -1007,8 +1057,11 @@ function drawFx(){
 function drawVignette(){
   const g=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.4,W/2,H/2,Math.max(W,H)*0.65);
   g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,`rgba(2,0,12,${0.55+0.25*A})`);ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-  if(state==='play'&&o2<25){const a=(25-o2)/25*(0.35+0.25*Math.sin(t*8));const r=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.3,W/2,H/2,Math.max(W,H)*0.65);
-    r.addColorStop(0,'rgba(120,0,20,0)');r.addColorStop(1,`rgba(140,10,30,${a})`);ctx.fillStyle=r;ctx.fillRect(0,0,W,H);}
+  if(state==='play'&&o2<35){ // low oxygen: red edges + red tint, pulsing faster as air runs out
+    const k=lowK(),beat=lowBeat();
+    const r=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*(0.32-0.12*k),W/2,H/2,Math.max(W,H)*0.62);
+    r.addColorStop(0,'rgba(160,0,20,0)');r.addColorStop(1,`rgba(190,10,35,${(0.35+0.5*k)*(0.55+0.45*beat)})`);ctx.fillStyle=r;ctx.fillRect(0,0,W,H);
+    ctx.fillStyle=`rgba(200,20,40,${k*(0.05+0.11*beat)})`;ctx.fillRect(0,0,W,H);}
 }
 
 // ---------- HUD, pad & screens ----------
@@ -1045,9 +1098,9 @@ function drawHUD(){
     ctx.fillStyle='#e6f2ff';ctx.fillRect(bx+bs/2-6,by+bs/2-7,4,14);ctx.fillRect(bx+bs/2+2,by+bs/2-7,4,14);
   }
   ctx.fillStyle='rgba(255,255,255,0.08)';roundRect(gx,gy,gw,gh,gh/2);ctx.fill();
-  const low=o2<30,fw=Math.max(0,gw*o2/100);
+  const low=o2<35,fw=Math.max(0,gw*o2/100);
   if(fw>1){const g=ctx.createLinearGradient(gx,0,gx+gw,0);if(low){g.addColorStop(0,'#ff4d6a');g.addColorStop(1,'#ff9a6a');}else{g.addColorStop(0,'#3a8bff');g.addColorStop(1,'#6ff4ff');}
-    ctx.globalAlpha=low?0.7+0.3*Math.sin(t*10):1;ctx.fillStyle=g;roundRect(gx,gy,Math.max(fw,gh),gh,gh/2);ctx.fill();ctx.globalAlpha=1;
+    ctx.globalAlpha=low?0.55+0.45*lowBeat():1;ctx.fillStyle=g;roundRect(gx,gy,Math.max(fw,gh),gh,gh/2);ctx.fill();ctx.globalAlpha=1;
     q(low?G.red:G.cyan,gx+fw,gy+gh/2,16,0.6);flush();}
   ctx.strokeStyle='rgba(170,235,255,0.45)';ctx.lineWidth=1.2;roundRect(gx,gy,gw,gh,gh/2);ctx.stroke();
   if(scooterT>0){const sy=gy+gh+7;ctx.fillStyle='rgba(255,255,255,0.08)';roundRect(gx,sy,gw,6,3);ctx.fill();ctx.fillStyle='#ffd25a';roundRect(gx,sy,gw*scooterT/6,6,3);ctx.fill();
@@ -1062,7 +1115,7 @@ function drawMenu(){
   y+=fs*1.05;
   const ts=clamp(H*0.038,12,17),lh=ts*1.4;
   ctx.font=`600 ${ts}px ${FONT}`;ctx.fillStyle='rgba(225,238,255,0.92)';
-  const txt=["Touche l'écran là où tu veux que Ninours aille : plus haut ou plus bas pour monter ou descendre.","Loin devant lui il accélère, derrière lui il ralentit. Sans toucher, il garde sa ligne.","Ramasse les pièces, cherche les trésors cachés sous les tunnels, et remonte respirer !","Poissons et récifs te coûtent de l'air. La pieuvre à anneaux bleus, elle, ne pardonne pas !"];
+  const txt=["Ramasse le max de pièces !", "Touche l'écran pour guider Ninours.", "N’oublie pas d’aller respirer de temps en temps.", "Sois pas un bolosse, touche pas aux récifs !", "Et méfie-toi de la pieuvre à anneaux bleus ☠️"];
   for(const s of txt){for(const l of wrap(s,Math.min((W-(bw?bw+28:0))*0.85,680))){ctx.fillText(l,cx,y);y+=lh;}y+=lh*0.15;}
   y+=lh*0.5;
   ctx.globalAlpha=0.6+0.4*Math.sin(t*3);ctx.font=`900 ${ts*1.2}px ${FONT}`;ctx.fillStyle='#8ff4ff';ctx.shadowColor='#4fe6ff';ctx.shadowBlur=14;
@@ -1146,8 +1199,8 @@ function draw(){
   drawVignette();
   if(state==='play'){drawHUD();drawSpeech();drawHints();}
   else if(state==='pause'){drawHUD();drawPauseScreen();}
-  else if(state==='menu'){drawMenu();}
-  else{drawSpeech();drawOver();}
+  else if(state==='menu'){drawMenu();drawInstallBtn();}
+  else{drawSpeech();drawOver();if(overT>1)drawInstallBtn();else installBtn=null;}
   if(portrait)drawRotate();
 }
 
