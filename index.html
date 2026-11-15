@@ -33,11 +33,24 @@ canvas{display:block;position:fixed;inset:0}
 #installBox .row{display:flex;gap:10px;margin-top:12px}
 #installBox button{flex:1;font:inherit;font-weight:800;font-size:16px;padding:10px;border:0;border-radius:10px;background:rgba(255,255,255,0.12);color:#fff}
 #installBox button.main{background:#5fd8ff;color:#08142a}
+#board{position:fixed;z-index:3;display:flex;flex-direction:column;background:rgba(12,10,36,0.8);border:1px solid rgba(160,140,255,0.45);border-radius:14px;box-sizing:border-box;padding:10px 6px 8px 12px;font-family:'Trebuchet MS','Avenir Next',system-ui,sans-serif;color:#e6eeff}
+#board[hidden]{display:none}
+#board .t{font-weight:900;font-size:15px;color:#ffe2b0;margin:0 6px 6px 0}
+#boardList{list-style:none;margin:0;padding:0 6px 0 0;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;overscroll-behavior:contain;flex:1;min-height:0}
+#boardList li{display:flex;justify-content:space-between;gap:8px;padding:3px 4px;border-radius:7px;font-size:14px;font-weight:700;line-height:1.25}
+#boardList li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#boardList li.me{color:#ffd76a;background:rgba(255,215,106,0.13)}
+#boardList .c{color:#ffcf3f;white-space:nowrap}
+#boardList li.me .c{color:#ffd76a}
+#boardList li.empty{color:rgba(200,220,255,0.7);font-weight:600}
+#boardStatus{font-size:12px;color:rgba(180,220,255,0.75);margin-top:4px}
+#boardStatus:empty{display:none}
 #safe{position:absolute;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 </style>
 </head>
 <body>
 <div id="safe"></div>
+<div id="board" hidden><div class="t">🏆 Classement</div><ol id="boardList"></ol><div id="boardStatus"></div></div>
 <div id="installBox" hidden><div class="card"><h2>📲 Installer Ninours</h2><div id="installBody"></div><div class="row"><button id="installNow" class="main" hidden>Installer</button><button id="installClose">Fermer</button></div></div></div>
 <div id="pseudoBox" hidden><form id="pseudoForm" autocomplete="off"><h2>Ton pseudo</h2><input id="pseudoIn" maxlength="14" placeholder="Ex : Amélie" enterkeyhint="go"><button type="submit">C'est parti !</button></form></div>
 <canvas id="c"></canvas>
@@ -170,7 +183,7 @@ function lbFetch(){
   if(!LEADERBOARD_URL)return;
   const ctl=typeof AbortController!=='undefined'?new AbortController():null,to=setTimeout(()=>ctl&&ctl.abort(),7000);
   if(!lbOn)lbState='loading';
-  fetch(LEADERBOARD_URL+'?t='+Date.now(),ctl?{signal:ctl.signal}:{}).then(r=>r.json()).then(d=>{clearTimeout(to);if(d&&Array.isArray(d.top)){lbTop=d.top;lbOn=true;lbState='ok';}else if(!lbOn)lbState='error';}).catch(()=>{clearTimeout(to);if(!lbOn)lbState='error';});
+  fetch(LEADERBOARD_URL+'?n=20&t='+Date.now(),ctl?{signal:ctl.signal}:{}).then(r=>r.json()).then(d=>{clearTimeout(to);if(d&&Array.isArray(d.top)){lbTop=d.top;lbOn=true;lbState='ok';}else if(!lbOn)lbState='error';}).catch(()=>{clearTimeout(to);if(!lbOn)lbState='error';});
 }
 function lbSend(coins){
   if(!LEADERBOARD_URL||!pseudo||coins<=0)return;
@@ -218,6 +231,28 @@ function drawInstallBtn(){
   ctx.fillStyle='#d8f3ff';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,x+13,y+bh/2+1);ctx.restore();
   installBtn={x,y,w:bw,h:bh};
 }
+// scrollable leaderboard panel (DOM, so it scrolls with the finger and never starts a game)
+const boardEl=document.getElementById('board'),blist=document.getElementById('boardList'),bstatus=document.getElementById('boardStatus');
+let boardKey='',boardGeo='',boardShownFor='';
+function renderBoard(){
+  const key=JSON.stringify(lbTop)+'|'+pseudo+'|'+lbState;if(key===boardKey)return false;boardKey=key;blist.innerHTML='';
+  if(!lbTop.length){const li=document.createElement('li');li.className='empty';li.textContent=lbState==='loading'?'Chargement…':lbState==='error'?'Indisponible pour l’instant':'Aucun score encore';blist.append(li);}
+  lbTop.slice(0,20).forEach((r,i)=>{const li=document.createElement('li');if(r.pseudo===pseudo)li.className='me';
+    const n=document.createElement('span');n.textContent=(i+1)+'. '+r.pseudo;const c=document.createElement('span');c.className='c';c.textContent=r.coins+' ●';li.append(n,c);blist.append(li);});
+  return true;
+}
+function scrollBoardToMe(){const me=blist.querySelector('.me');if(!me)return;blist.scrollTop=Math.max(0,me.offsetTop-blist.offsetTop-blist.clientHeight/2+me.offsetHeight/2);}
+function syncBoard(){
+  const on=!!LEADERBOARD_URL&&!portrait&&!pseudoOpen&&!installOpen&&(state==='menu'||state==='pause'||(state==='over'&&overT>0.3));
+  if(!on){if(!boardEl.hidden){boardEl.hidden=true;boardShownFor='';}return;}
+  const bw=boardWidth(),top=state==='pause'?Math.max(safeT+56,H*0.2):Math.max(safeT+14,H*0.16);
+  const geo=[bw,top,H,safeR,safeB].join(',');
+  if(geo!==boardGeo){boardGeo=geo;Object.assign(boardEl.style,{width:bw+'px',top:top+'px',right:(safeR+14)+'px',maxHeight:Math.max(120,H-top-Math.max(16,safeB+10))+'px'});}
+  const changed=renderBoard();
+  if(bstatus.textContent!==lbStatus)bstatus.textContent=lbStatus;
+  if(boardEl.hidden)boardEl.hidden=false;
+  if(boardShownFor!==state||changed){boardShownFor=state;scrollBoardToMe();}
+}
 function tapStart(){
   if(portrait)return;
   if(pseudoOpen||installOpen)return;
@@ -240,7 +275,7 @@ window.addEventListener('pointerup',lift);window.addEventListener('pointercancel
 window.addEventListener('blur',()=>{pointers.clear();for(const k in keys)keys[k]=false;setPause(true);});
 window.addEventListener('keydown',e=>{if(installOpen&&e.code==='Escape'){closeInstall();return;}if(installOpen||pseudoOpen||(e.target&&e.target.tagName==='INPUT'))return;if(e.code==='KeyP'||e.code==='Escape'||(e.code==='Space'&&(state==='play'||state==='pause'))){e.preventDefault();if(!e.repeat)setPause(state==='play');return;}if(state==='pause'){if(!e.repeat&&(e.code==='Space'||e.code==='Enter'))setPause(false);return;}if(e.code.startsWith('Arrow')||e.code==='Space')e.preventDefault();if(!e.repeat&&(e.code==='Space'||e.code==='Enter'||e.code.startsWith('Arrow')))tapStart();keys[e.code]=true;});
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
-document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
+document.addEventListener('touchmove',e=>{if(e.target.closest&&e.target.closest('#boardList'))return;e.preventDefault();},{passive:false});
 
 // ---------- helpers ----------
 function addText(x,y,text,color,size){fx.push({x,y,vx:0,vy:-34*S,life:1.3,max:1.3,text,color,size:size||18*S});}
@@ -1126,13 +1161,11 @@ function drawMenu(){
     const txt2=pseudo?'Joueur : '+pseudo+'  ·  changer':'Choisir un pseudo';ctx.font=`700 13px ${FONT}`;const tw=ctx.measureText(txt2).width;
     ctx.fillStyle='rgba(160,230,255,0.85)';ctx.fillText(txt2,cx,y+lh*2.3);
     pseudoLink={x:cx-tw/2,y:y+lh*2.3-9,w:tw,h:18};ctx.fillRect(cx-tw/2,y+lh*2.3+9,tw,1);
-    drawBoard(W-safeR-bw-14,Math.max(safeT+14,H*0.16),bw);
   }
 }
 function drawOver(){
   const a=Math.min(1,overT*1.5);ctx.fillStyle=`rgba(2,5,14,${0.55*a})`;ctx.fillRect(0,0,W,H);
   ctx.globalAlpha=a;const bw=boardWidth(),cx=(W-(bw?bw+28:0))/2;let y=H*0.34;
-  if(bw)drawBoard(W-safeR-bw-14,Math.max(safeT+14,H*0.16),bw);
   const msg=deathReason==='octo'?'Attrapé par la pieuvre !':deathReason==='crush'?'Coincé dans le récif !':"Plus d'oxygène !";
   const fs=clamp(H*0.085,24,40);
   ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`900 ${fs}px ${FONT}`;
@@ -1145,23 +1178,9 @@ function drawOver(){
   ctx.globalAlpha=1;
 }
 function boardWidth(){return LEADERBOARD_URL?Math.min(200,W*0.25):0;}
-function drawBoard(x,y,w){
-  const rows=lbTop.slice(0,5),rh=22,h=40+Math.max(1,rows.length)*rh+(lbStatus?20:0);
-  ctx.save();ctx.fillStyle='rgba(12,10,36,0.78)';roundRect(x,y,w,h,14);ctx.fill();ctx.strokeStyle='rgba(160,140,255,0.45)';ctx.lineWidth=1.2;ctx.stroke();
-  ctx.textBaseline='middle';ctx.textAlign='left';ctx.font=`900 15px ${FONT}`;ctx.fillStyle='#ffe2b0';ctx.fillText('🏆 Classement',x+12,y+20);
-  ctx.font=`700 14px ${FONT}`;
-  if(!rows.length){ctx.fillStyle='rgba(200,220,255,0.7)';ctx.fillText(lbState==='loading'?'Chargement…':lbState==='error'?'Indisponible pour l’instant':'Aucun score encore',x+12,y+40+rh/2);}
-  rows.forEach((r,i)=>{const yy=y+40+i*rh+rh/2,me=r.pseudo===pseudo;
-    ctx.fillStyle=me?'#ffd76a':'rgba(225,238,255,0.9)';ctx.textAlign='left';
-    let name=String(r.pseudo);while(ctx.measureText((i+1)+'. '+name).width>w-70&&name.length>1)name=name.slice(0,-1);
-    ctx.fillText((i+1)+'. '+name,x+12,yy);ctx.textAlign='right';ctx.fillStyle=me?'#ffd76a':'#ffcf3f';ctx.fillText(String(r.coins)+' ●',x+w-12,yy);});
-  if(lbStatus){ctx.textAlign='left';ctx.font=`600 12px ${FONT}`;ctx.fillStyle='rgba(180,220,255,0.75)';ctx.fillText(lbStatus,x+12,y+h-12);}
-  ctx.restore();
-}
 function drawPauseScreen(){
   ctx.fillStyle='rgba(3,4,16,0.6)';ctx.fillRect(0,0,W,H);
   const bw=boardWidth(),cx=(W-(bw?bw+28:0))/2,cy=H*0.45,fs=clamp(H*0.11,28,48);
-  if(bw)drawBoard(W-safeR-bw-14,Math.max(safeT+56,H*0.2),bw);
   ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.font=`900 ${fs}px ${FONT}`;ctx.shadowColor='rgba(160,140,255,0.9)';ctx.shadowBlur=22;ctx.fillStyle='#ece6ff';ctx.fillText('Pause',cx,cy);ctx.shadowBlur=0;
   ctx.font=`900 ${Math.max(16,fs*0.42)}px ${FONT}`;ctx.fillStyle='#8ff4ff';ctx.shadowColor='#4fe6ff';ctx.shadowBlur=12;ctx.fillText(matchMedia('(pointer:fine)').matches?'Espace ou clic pour reprendre':'Touche pour reprendre',cx,cy+fs*1.1);ctx.shadowBlur=0;
@@ -1197,6 +1216,7 @@ function draw(){
   drawFx();
   ctx.restore();
   drawVignette();
+  syncBoard();
   if(state==='play'){drawHUD();drawSpeech();drawHints();}
   else if(state==='pause'){drawHUD();drawPauseScreen();}
   else if(state==='menu'){drawMenu();drawInstallBtn();}
